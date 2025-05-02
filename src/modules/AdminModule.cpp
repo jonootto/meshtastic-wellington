@@ -265,7 +265,7 @@ bool AdminModule::handleReceivedProtobuf(const meshtastic_MeshPacket &mp, meshta
         disableBluetooth();
         LOG_INFO("Commit transaction for edited settings");
         hasOpenEditTransaction = false;
-        saveChanges(SEGMENT_CONFIG | SEGMENT_MODULECONFIG | SEGMENT_DEVICESTATE | SEGMENT_CHANNELS);
+        saveChanges(SEGMENT_CONFIG | SEGMENT_MODULECONFIG | SEGMENT_DEVICESTATE | SEGMENT_CHANNELS | SEGMENT_NODEDATABASE);
         break;
     }
     case meshtastic_AdminMessage_get_device_connection_status_request_tag: {
@@ -284,7 +284,6 @@ bool AdminModule::handleReceivedProtobuf(const meshtastic_MeshPacket &mp, meshta
     case meshtastic_AdminMessage_remove_by_nodenum_tag: {
         LOG_INFO("Client received remove_nodenum command");
         nodeDB->removeNodeByNum(r->remove_by_nodenum);
-        this->notifyObservers(r); // Observed by screen
         break;
     }
     case meshtastic_AdminMessage_set_favorite_node_tag: {
@@ -334,7 +333,7 @@ bool AdminModule::handleReceivedProtobuf(const meshtastic_MeshPacket &mp, meshta
         node->position = TypeConversions::ConvertToPositionLite(r->set_fixed_position);
         nodeDB->setLocalPosition(r->set_fixed_position);
         config.position.fixed_position = true;
-        saveChanges(SEGMENT_DEVICESTATE | SEGMENT_NODEDATABASE | SEGMENT_CONFIG, false);
+        saveChanges(SEGMENT_NODEDATABASE | SEGMENT_CONFIG, false);
 #if !MESHTASTIC_EXCLUDE_GPS
         if (gps != nullptr)
             gps->enable();
@@ -347,7 +346,7 @@ bool AdminModule::handleReceivedProtobuf(const meshtastic_MeshPacket &mp, meshta
         LOG_INFO("Client received remove_fixed_position command");
         nodeDB->clearLocalPosition();
         config.position.fixed_position = false;
-        saveChanges(SEGMENT_DEVICESTATE | SEGMENT_NODEDATABASE | SEGMENT_CONFIG, false);
+        saveChanges(SEGMENT_NODEDATABASE | SEGMENT_CONFIG, false);
         break;
     }
     case meshtastic_AdminMessage_set_time_only_tag: {
@@ -443,6 +442,9 @@ bool AdminModule::handleReceivedProtobuf(const meshtastic_MeshPacket &mp, meshta
     if (mp.decoded.want_response && !myReply) {
         myReply = allocErrorResponse(meshtastic_Routing_Error_NONE, &mp);
     }
+
+    // Allow any observers (e.g. the UI) to respond to this event
+    notifyObservers(r);
 
     return handled;
 }
@@ -574,7 +576,6 @@ void AdminModule::handleSetConfig(const meshtastic_Config &c)
         config.has_position = true;
         config.position = c.payload_variant.position;
         // Save nodedb as well in case we got a fixed position packet
-        saveChanges(SEGMENT_DEVICESTATE, false);
         break;
     case meshtastic_Config_power_tag:
         LOG_INFO("Set config: Power");
